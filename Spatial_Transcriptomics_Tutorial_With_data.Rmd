@@ -1,0 +1,111 @@
+---
+title: "Spatial transcriptomics in Seurat Tutorial"
+output: html_notebook
+author: "Emily Chambers"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+---
+
+
+Tutorial adapted from Seurat vignette 
+https://github.com/satijalab/seurat/blob/master/vignettes/spatial_vignette.Rmd
+
+# Load libraries
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+```
+
+# Data
+The data is mouse brain created using 
+We are loading in the data directly from the output of spaceranger
+
+Make sure hd5f lbraries are installed
+```{r}
+brain <- Load10X_Spatial(data.dir ="outs/",filename = "filtered_feature_bc_matrix.h5" )
+brain
+```
+
+Issue #1
+Raised issue with Seurat here over discrepency between spaceranger output and Load10X_spatial() input
+https://github.com/satijalab/seurat/issues/6498
+
+
+Issue #2
+
+The coordinates of the spatial image are characters instead of integers, this causes issues with the data being read.
+
+```{r}
+brain@images[["slice1"]]@coordinates[["tissue"]] <- as.integer(brain@images[["slice1"]]@coordinates[["tissue"]])
+brain@images[["slice1"]]@coordinates[["row"]] <- as.integer(brain@images[["slice1"]]@coordinates[["row"]])
+brain@images[["slice1"]]@coordinates[["col"]] <- as.integer(brain@images[["slice1"]]@coordinates[["col"]])
+brain@images[["slice1"]]@coordinates[["imagerow"]] <- as.integer(brain@images[["slice1"]]@coordinates[["imagerow"]])
+brain@images[["slice1"]]@coordinates[["imagecol"]] <- as.integer(brain@images[["slice1"]]@coordinates[["imagecol"]])
+```
+
+
+# Data processing
+```{r}
+plot1 <- VlnPlot(brain, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(brain, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+```
+
+```{r}
+brain <- SCTransform(brain, assay = "Spatial", verbose = FALSE)
+```
+
+
+```{r}
+SpatialFeaturePlot(brain, features = c("Hpca", "Ttr"))
+```
+```{r}
+p1 <- SpatialFeaturePlot(brain, features = "Ttr", pt.size.factor = 1)
+p2 <- SpatialFeaturePlot(brain, features = "Ttr", alpha = c(0.1, 1))
+p1 + p2
+```
+
+```{r}
+brain <- RunPCA(brain, assay = "SCT", verbose = FALSE)
+brain <- FindNeighbors(brain, reduction = "pca", dims = 1:30)
+brain <- FindClusters(brain, verbose = FALSE)
+brain <- RunUMAP(brain, reduction = "pca", dims = 1:30)
+```
+
+```{r}
+p1 <- DimPlot(brain, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(brain, label = TRUE, label.size = 3)
+p1 + p2
+```
+
+```{r}
+SpatialDimPlot(brain, cells.highlight = CellsByIdentities(object = brain, idents = c(2, 1, 4, 3,
+    5, 8)), facet.highlight = TRUE, ncol = 3)
+```
+
+```{r}
+SpatialDimPlot(brain, interactive = TRUE) 
+```
+
+```{r}
+SpatialFeaturePlot(brain, features = "Ttr", interactive = TRUE)
+```
+
+# Idenstification of spatially variable features
+ 1st methos : Using prior knowledge
+```{r}
+de_markers <- FindMarkers(brain, ident.1 = 5, ident.2 = 6)
+SpatialFeaturePlot(object = brain, features = rownames(de_markers)[1:3], alpha = c(0.1, 1), ncol = 3)
+
+```
+2nd method: Looking for patterns in the data
+
+```{r}
+brain <- FindSpatiallyVariableFeatures(brain, assay = "SCT", features = VariableFeatures(brain)[1:1000],
+    selection.method = "markvariogram")
+top.features <- head(SpatiallyVariableFeatures(brain, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(brain, features = top.features, ncol = 3, alpha = c(0.1, 1))
+```
+
