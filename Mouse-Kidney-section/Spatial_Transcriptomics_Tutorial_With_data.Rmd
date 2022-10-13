@@ -1,0 +1,165 @@
+---
+title: "Spatial transcriptomics in spaceranger and Seurat workflow"
+output: html_notebook
+author: "Emily Chambers"
+date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  tidy = TRUE,
+  tidy.opts = list(width.cutoff = 95),
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  time_it = TRUE
+)
+
+```
+# Introduction
+
+Aiming to show a complete workthrough of 10X Spatial Gene Expression data from raw reads to analysis and visualization using 10X genomics spaceranger and Seurat.
+
+# Acknowledgements
+
+Tutorial adapted from 10X spaceranger tutorial and Seurat vignette
+
+-   <https://github.com/satijalab/seurat/blob/master/vignettes/spatial_vignette.Rmd>
+-   <https://support.10xgenomics.com/spatial-gene-expression/software/pipelines/latest/tutorials/count-ff-tutorial>
+
+# Data
+
+The data is publicly available Mouse Kidney Section
+
+-   Sequencing Depth: 261,122 read pairs per spot
+-   Sequencing Configuration: 28 x 120 bp
+-   Sequencing Coverage: Read 1 - 28 bp (includes 16 bp Spatial Barcode, 12 bp UMI); Read 2 - 120 bp (transcript); i7 sample index - 10 bp; i5 sample index - 10 bp.
+-   Slide: V19L29-096
+-   Area: B1
+
+<https://www.10xgenomics.com/resources/datasets/mouse-kidney-section-coronal-1-standard-1-1-0>
+
+```{bash, eval  =FALSE}
+curl https://s3-us-west-2.amazonaws.com/10x.files/samples/spatial-exp/1.1.0/datasets/V1_Mouse_Kidney_fastqs.tar
+ -o V1_Mouse_Kidney/V1_V1_Mouse_Kidney_fastqs.tar
+curl https://cf.10xgenomics.com/samples/spatial-exp/1.1.0/datasets/V1_Mouse_Kidney_image.tif -o V1_Mouse_Kidney/V1_Adult_V1_Mouse_Kidney_image.tif
+
+tar -xvf datasets/V1_Mouse_Kidney_fastqs.tar
+
+# Download mouse reference
+curl -O https://cf.10xgenomics.com/supp/spatial-exp/refdata-gex-mm10-2020-A.tar.gz
+
+```
+
+Space ranger was used with the following params:
+
+```{bash, eval  =FALSE}
+./spaceranger-2.0.0/spaceranger count --id="V1_Adult_Mouse_Brain" \
+                   --description="Adult Mouse Brain (Coronal)" \
+                   --transcriptome=refdata-gex-mm10-2020-A \
+                   --fastqs=datasets/V1_Adult_Mouse_Brain_fastqs \
+                   --image=datasets/V1_Adult_Mouse_Brain_image.tif \
+                   --slide=V19L01-041 \
+                   --area=C1 \
+		               --jobmode=local \
+                   --localcores=8 \
+		               --localmem=40
+		               
+```
+
+# Load libraries
+
+```{r, message=FALSE}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+```
+
+We are loading in the data directly from the output of spaceranger
+
+Make sure hd5f libraries are installed
+
+```{r}
+#brain <- 
+brain <- Load10X_Spatial(data.dir ="outs")
+
+
+
+```
+
+# Data preprocessing
+
+```{r}
+plot1 <- VlnPlot(brain, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(brain, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+```
+The plots show quite a wide variance in molecular counts. This is due to technical variation but also due to natural variation in tissue types across the section. For this reason LogNormalise() is not suitable and Seurat reccomend rthe use of SCTransform() instead
+```{r}
+brain <- SCTransform(brain, assay = "Spatial", verbose = FALSE)
+```
+
+# Visualisation
+
+Highlight particular features
+```{r}
+SpatialFeaturePlot(brain, features = c("Hpca", "Ttr"))
+```
+
+```{r}
+p1 <- SpatialFeaturePlot(brain, features = "Ttr", pt.size.factor = 1)
+p2 <- SpatialFeaturePlot(brain, features = "Ttr", alpha = c(0.1, 1))
+p1 + p2
+```
+# Dimensionality reduction, clustering, and visualization
+```{r, message=FALSE}
+brain <- RunPCA(brain, assay = "SCT", verbose = FALSE)
+brain <- FindNeighbors(brain, reduction = "pca", dims = 1:30)
+brain <- FindClusters(brain, verbose = FALSE)
+brain <- RunUMAP(brain, reduction = "pca", dims = 1:30)
+```
+
+```{r, message=FALSE}
+p1 <- DimPlot(brain, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(brain, label = TRUE, label.size = 3)
+p1 + p2
+```
+
+```{r}
+SpatialDimPlot(brain, cells.highlight = CellsByIdentities(object = brain, idents = c(2, 1, 4, 3,
+    5, 8)), facet.highlight = TRUE, ncol = 3)
+```
+# Interactive plots
+```{r, eval=FALSE}
+SpatialDimPlot(brain, interactive = TRUE) 
+
+SpatialFeaturePlot(brain, features = "Ttr", interactive = TRUE)
+```
+
+# Identification of spatially variable features
+
+1st method : Using prior knowledge
+
+```{r, message=FALSE}
+de_markers <- FindMarkers(brain, ident.1 = 5, ident.2 = 6)
+SpatialFeaturePlot(object = brain, features = rownames(de_markers)[1:3], alpha = c(0.1, 1), ncol = 3)
+
+```
+
+2nd method: Looking for patterns in the data
+
+```{r}
+brain <- FindSpatiallyVariableFeatures(brain, assay = "SCT", features = VariableFeatures(brain)[1:500],
+    selection.method = "markvariogram")
+top.features <- head(SpatiallyVariableFeatures(brain, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(brain, features = top.features, ncol = 3, alpha = c(0.1, 1))
+```
+
+More tutorials on data integration, subsetting and multiple slice data available at https://satijalab.org/seurat/articles/spatial_vignette.html
+
+```{r}
+sessionInfo()
+```
+
