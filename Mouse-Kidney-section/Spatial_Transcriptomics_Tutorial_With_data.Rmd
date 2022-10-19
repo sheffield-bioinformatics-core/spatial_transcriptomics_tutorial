@@ -54,11 +54,11 @@ curl -O https://cf.10xgenomics.com/supp/spatial-exp/refdata-gex-mm10-2020-A.tar.
 Space ranger was used with the following params:
 
 ```{bash, eval  =FALSE}
-./spaceranger-2.0.0/spaceranger count --id="V1_Adult_Mouse_Brain" \
-                   --description="Adult Mouse Brain (Coronal)" \
+./spaceranger-2.0.0/spaceranger count --id="V1_Adult_Mouse_kidney" \
+                   --description="Adult Mouse kidney (Coronal)" \
                    --transcriptome=refdata-gex-mm10-2020-A \
-                   --fastqs=datasets/V1_Adult_Mouse_Brain_fastqs \
-                   --image=datasets/V1_Adult_Mouse_Brain_image.tif \
+                   --fastqs=datasets/V1_Adult_Mouse_kidney_fastqs \
+                   --image=datasets/V1_Adult_V1_Mouse_Kidney_image.tif \
                    --slide=V19L01-041 \
                    --area=C1 \
 		               --jobmode=local \
@@ -81,9 +81,9 @@ We are loading in the data directly from the output of spaceranger
 Make sure hd5f libraries are installed
 
 ```{r}
-#brain <- 
-brain <- Load10X_Spatial(data.dir ="outs")
-
+#kidney <- 
+kidney <- Load10X_Spatial(data.dir ="../Mouse-Kidney-section/outs/")
+kidney
 
 
 ```
@@ -91,51 +91,46 @@ brain <- Load10X_Spatial(data.dir ="outs")
 # Data preprocessing
 
 ```{r}
-plot1 <- VlnPlot(brain, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
-plot2 <- SpatialFeaturePlot(brain, features = "nCount_Spatial") + theme(legend.position = "right")
+plot1 <- VlnPlot(kidney, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(kidney, features = "nCount_Spatial") + theme(legend.position = "right")
 wrap_plots(plot1, plot2)
 
 ```
 The plots show quite a wide variance in molecular counts. This is due to technical variation but also due to natural variation in tissue types across the section. For this reason LogNormalise() is not suitable and Seurat reccomend rthe use of SCTransform() instead
 ```{r}
-brain <- SCTransform(brain, assay = "Spatial", verbose = FALSE)
+kidney <- SCTransform(kidney, assay = "Spatial", verbose = FALSE)
 ```
 
 # Visualisation
 
 Highlight particular features
 ```{r}
-SpatialFeaturePlot(brain, features = c("Hpca", "Ttr"))
+SpatialFeaturePlot(kidney, features = c("Hpca", "Ttr"))
 ```
 
-```{r}
-p1 <- SpatialFeaturePlot(brain, features = "Ttr", pt.size.factor = 1)
-p2 <- SpatialFeaturePlot(brain, features = "Ttr", alpha = c(0.1, 1))
-p1 + p2
-```
+
 # Dimensionality reduction, clustering, and visualization
 ```{r, message=FALSE}
-brain <- RunPCA(brain, assay = "SCT", verbose = FALSE)
-brain <- FindNeighbors(brain, reduction = "pca", dims = 1:30)
-brain <- FindClusters(brain, verbose = FALSE)
-brain <- RunUMAP(brain, reduction = "pca", dims = 1:30)
+kidney <- RunPCA(kidney, assay = "SCT", verbose = FALSE)
+kidney <- FindNeighbors(kidney, reduction = "pca", dims = 1:30)
+kidney <- FindClusters(kidney, verbose = FALSE)
+kidney <- RunUMAP(kidney, reduction = "pca", dims = 1:30)
 ```
 
 ```{r, message=FALSE}
-p1 <- DimPlot(brain, reduction = "umap", label = TRUE)
-p2 <- SpatialDimPlot(brain, label = TRUE, label.size = 3)
+p1 <- DimPlot(kidney, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(kidney, label = TRUE, label.size = 3)
 p1 + p2
 ```
 
-```{r}
-SpatialDimPlot(brain, cells.highlight = CellsByIdentities(object = brain, idents = c(2, 1, 4, 3,
-    5, 8)), facet.highlight = TRUE, ncol = 3)
+```{r, fig.width=30}
+SpatialDimPlot(kidney, cells.highlight = CellsByIdentities(object = kidney, idents = c(0:10)), facet.highlight = TRUE, ncol = 5)
 ```
 # Interactive plots
 ```{r, eval=FALSE}
-SpatialDimPlot(brain, interactive = TRUE) 
+SpatialDimPlot(kidney, interactive = TRUE) 
 
-SpatialFeaturePlot(brain, features = "Ttr", interactive = TRUE)
+SpatialFeaturePlot(kidney, features = "Ttr", interactive = TRUE)
 ```
 
 # Identification of spatially variable features
@@ -143,18 +138,18 @@ SpatialFeaturePlot(brain, features = "Ttr", interactive = TRUE)
 1st method : Using prior knowledge
 
 ```{r, message=FALSE}
-de_markers <- FindMarkers(brain, ident.1 = 5, ident.2 = 6)
-SpatialFeaturePlot(object = brain, features = rownames(de_markers)[1:3], alpha = c(0.1, 1), ncol = 3)
+de_markers <- FindMarkers(kidney, ident.1 = 5, ident.2 = 6)
+SpatialFeaturePlot(object = kidney, features = rownames(de_markers)[1:3], alpha = c(0.1, 1), ncol = 3)
 
 ```
 
 2nd method: Looking for patterns in the data
 
 ```{r}
-brain <- FindSpatiallyVariableFeatures(brain, assay = "SCT", features = VariableFeatures(brain)[1:500],
+kidney <- FindSpatiallyVariableFeatures(kidney, assay = "SCT", features = VariableFeatures(kidney)[1:500],
     selection.method = "markvariogram")
-top.features <- head(SpatiallyVariableFeatures(brain, selection.method = "markvariogram"), 6)
-SpatialFeaturePlot(brain, features = top.features, ncol = 3, alpha = c(0.1, 1))
+top.features <- head(SpatiallyVariableFeatures(kidney, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(kidney, features = top.features, ncol = 3, alpha = c(0.1, 1))
 ```
 
 More tutorials on data integration, subsetting and multiple slice data available at https://satijalab.org/seurat/articles/spatial_vignette.html
